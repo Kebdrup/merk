@@ -7,7 +7,9 @@
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-set-title",
     "opener:default",
+    "process:default",
     "fs:default",
     {
       "identifier": "fs:allow-exists",

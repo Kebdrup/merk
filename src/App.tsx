@@ -1,68 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { getMatches } from "@tauri-apps/plugin-cli";
-import { readTextFile, UnwatchFn, watchImmediate } from "@tauri-apps/plugin-fs";
-import { invoke } from "@tauri-apps/api/core";
-import { join, isAbsolute } from "@tauri-apps/api/path";
-import mermaid from "mermaid";
-import { marked, RendererObject } from "marked";
+import { UnwatchFn, watchImmediate } from "@tauri-apps/plugin-fs";
+import { resolve } from "@tauri-apps/api/path";
 import DOMpurify from "dompurify";
-
-type Heading = {
-  depth: number;
-  text: string;
-};
-
-const getRenderer = (
-  diagramIndex: number,
-  headingIndex: number,
-): RendererObject => {
-  return {
-    code({ text, lang }) {
-      if (lang === "mermaid") {
-        return `{{${diagramIndex++}}}`;
-      } else {
-        return `<pre>${text}</pre>`;
-      }
-    },
-    heading({ text, depth }) {
-      return `<h${depth} id="${headingIndex++}">${text}</h${depth}>`;
-    },
-  };
-};
-
-const extractMermaidDiagram = async (text: string): Promise<string[]> => {
-  const matches = [
-    ...text.matchAll(/^ *```mermaid *\n([\s\S]*?)^ *```$/gm),
-  ].map((match) => match[1]);
-  const diagrams = await Promise.all(
-    matches.map(async (match, index) => {
-      const { svg } = await mermaid.render(`diagram-${index}`, match);
-      return svg;
-    }),
-  );
-  return diagrams;
-};
-
-const extractHeadings = (text: string): Heading[] => {
-  const headings = [...text.matchAll(/(#+) (.+)/g)].map((match) => ({
-    depth: match[1].length,
-    text: match[2],
-  }));
-  return headings;
-};
-
-const getMarkdownWithMermaid = async (filePath: string) => {
-  const content = await readTextFile(filePath);
-  const diagrams = await extractMermaidDiagram(content);
-  const headings = extractHeadings(content);
-  marked.use({ renderer: getRenderer(0, 0) });
-  let markdown = await marked.parse(content);
-  markdown = diagrams.reduce((markdown, diagram, index) => {
-    return markdown.replace(`{{${index}}}`, diagram);
-  }, markdown);
-  return { headings, markdown };
-};
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useKeybindings } from "./useKeybindings";
+import { getMarkdownWithMermaid, Heading } from "./markdowUtils";
 
 function App() {
   const [content, setContent] = useState<{
@@ -70,35 +14,49 @@ function App() {
     markdown: string;
   }>({ headings: [], markdown: "" });
   const mainRef = useRef<HTMLElement>(null);
+  const [showSearch, setShowSearch] = useState(false);
+
+  const keybindings = useKeybindings(() => setShowSearch((show) => !show));
 
   useEffect(() => {
-    mermaid.initialize({ startOnLoad: false });
+    const processKeybind = (event: KeyboardEvent) => {
+      const keybind = keybindings.find((keybinding) => {
+        if (keybinding.key != event.key) {
+          return false;
+        }
+        return true;
+      });
+      if (keybind) {
+        keybind.onKeyDown();
+        event.preventDefault();
+      }
+    };
 
+    document.addEventListener("keydown", processKeybind);
     let unwatch: UnwatchFn;
     (async () => {
       try {
         const matches = await getMatches();
         const input = matches.args.input?.value as string | null;
         if (input) {
-          const absolute = await isAbsolute(input);
-          const filePath = absolute
-            ? input
-            : await join(await invoke<string>("get_cwd"), input);
+          const path = await resolve(input);
+          await getCurrentWindow().setTitle(path);
 
           // Setup watcher
-          unwatch = await watchImmediate(input, async (event) => {
+          unwatch = await watchImmediate(path, async (event) => {
             if (
               typeof event.type === "object" &&
               "modify" in event.type &&
               event.type.modify.kind === "data"
             ) {
-              const markdown = await getMarkdownWithMermaid(filePath);
+              // Render on modify
+              const markdown = await getMarkdownWithMermaid(path);
               setContent(markdown);
             }
           });
 
           // Do initial render
-          const markdown = await getMarkdownWithMermaid(filePath);
+          const markdown = await getMarkdownWithMermaid(path);
           setContent(markdown);
         }
       } catch (e) {
@@ -108,6 +66,7 @@ function App() {
 
     return () => {
       unwatch?.();
+      document.removeEventListener("keydown", processKeybind);
     };
   }, []);
 
@@ -125,12 +84,19 @@ function App() {
         ))}
       </div>
       <main
+        id="content"
         ref={mainRef}
         className="markdown-body"
         dangerouslySetInnerHTML={{
           __html: DOMpurify.sanitize(content.markdown),
         }}
       />
+      {showSearch && (
+        <div className="searchBox">
+          <p>Search:</p>
+          <input autoFocus />
+        </div>
+      )}
     </>
   );
 }
