@@ -88,7 +88,10 @@ function App() {
         ref={mainRef}
         className="markdown-body"
         dangerouslySetInnerHTML={{
-          __html: DOMpurify.sanitize(content.markdown),
+          __html: DOMpurify.sanitize(content.markdown, {
+            ADD_TAGS: ["foreignObject"],
+            HTML_INTEGRATION_POINTS: { foreignobject: true },
+          }),
         }}
       />
       {showSearch && (
