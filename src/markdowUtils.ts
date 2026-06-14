@@ -38,20 +38,23 @@ export const extractMermaidDiagram = async (text: string): Promise<string[]> => 
   return diagrams;
 };
 
-export const extractHeadings = (text: string): Heading[] => {
-  const headings = [...text.matchAll(/(#+) (.+)/g)].map((match) => ({
-    depth: match[1].length,
-    text: match[2],
-  }));
+export const extractHeadings = (markdownHTML: string): Heading[] => {
+  const dom = new DOMParser().parseFromString(markdownHTML, "text/html");
+  const headings = [...dom.querySelectorAll("h1, h2, h3, h4, h5, h6").values()].map(heading => {
+    return ({
+      depth: Number(heading.tagName.substring(1)),
+      text: heading.textContent ?? '',
+    })
+  })
   return headings;
 };
 
 export const getMarkdownWithMermaid = async (filePath: string) => {
   const content = await readTextFile(filePath);
   const diagrams = await extractMermaidDiagram(content);
-  const headings = extractHeadings(content);
   marked.use({ renderer: getRenderer(0, 0) });
   let markdown = await marked.parse(content);
+  const headings = extractHeadings(markdown);
   markdown = diagrams.reduce((markdown, diagram, index) => {
     return markdown.replace(`{{${index}}}`, diagram);
   }, markdown);

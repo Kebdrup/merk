@@ -14,6 +14,15 @@ Research consistently demonstrates that users expect a streamlined experience wi
 
 For this reason, the platform architecture has been designed around:
 
+```bash
+# This is some code
+
+sudo apt install git
+
+# End of code
+
+```
+
 - Reducing latency
 - Minimizing unnecessary interactions
 - Ensuring high availability
